@@ -1,239 +1,481 @@
+#include "tdas/extra.h"
+#include "tdas/list.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include <math.h>
-#include "tdas/list.h"
+#include <windows.h>
 
-#define MAX_LINE_LENGTH 1024
-#define MAX_ESCENARIOS 100
+typedef struct Room {
+  int id;
+  char name[50];
+  char description[256];
+  List *items;
+  int up, down, left, right;
+  int is_final;
+} Room;
 
-// ------------------ ESTRUCTURAS ------------------
+typedef struct Graph {
+  Room *Rooms[256];
+  int roomCount;
+} Graph;
+
 typedef struct Item {
-    char nombre[50];
-    int peso;
-    int valor;
+  char name[50];
+  int value;
+  int weight;
 } Item;
 
-typedef struct Escenario {
-    int id;
-    char nombre[100];
-    char descripcion[300];
-    List* items;
-    int arriba, abajo, izquierda, derecha;
-    int esFinal;
-} Escenario;
+typedef struct Player {
+  int carriedWeight;
+  int score;
+  int remainingTime;
+  List *items;
+} Player;
 
-typedef struct Jugador {
-    Escenario* ubicacion;
-    List* inventario;
-    int tiempo;
-    int puntaje;
-} Jugador;
+Graph *labyrinth;
+Graph *labyrinth_backup;
 
-// ------------------ VARIABLES GLOBALES ------------------
-
-Escenario* escenarios[MAX_ESCENARIOS];
-int total_escenarios = 0;
-Jugador jugador;
-
-// ------------------ FUNCIONES AUXILIARES ------------------
-
-Escenario* crearEscenario(int id, char* nombre, char* descripcion, int arriba, int abajo, int izquierda, int derecha, int esFinal) {
-    Escenario* e = (Escenario*)malloc(sizeof(Escenario));
-    e->id = id;
-    strcpy(e->nombre, nombre);
-    strcpy(e->descripcion, descripcion);
-    e->arriba = arriba;
-    e->abajo = abajo;
-    e->izquierda = izquierda;
-    e->derecha = derecha;
-    e->esFinal = esFinal;
-    e->items = list_create();
-    return e;
+Graph *create_graph() {
+  Graph *graph = malloc(sizeof(Graph));
+  for (int i = 0; i < 256; i++) {
+    graph->Rooms[i] = NULL;
+  }
+  graph->roomCount = 0;
+  return graph;
 }
 
-Item* crearItem(char* nombre, int peso, int valor) {
-    Item* i = (Item*)malloc(sizeof(Item));
-    strcpy(i->nombre, nombre);
-    i->peso = peso;
-    i->valor = valor;
-    return i;
-}
-
-Escenario* buscarEscenarioPorID(int id) {
-    for (int i = 0; i < total_escenarios; i++) {
-        if (escenarios[i]->id == id) return escenarios[i];
+void clear_inventory(Player* player) {
+    Item* it = list_first(player->items);
+    while (it != NULL) {
+        free(it);
+        it = list_next(player->items);
     }
-    return NULL;
+    list_clean(player->items);
 }
 
-void cargarItems(Escenario* escenario, char* str) {
-    char* token = strtok(str, ";");
-    while (token != NULL) {
-        char nombre[50];
-        int peso, valor;
-        sscanf(token, "%[^,],%d,%d", nombre, &peso, &valor);
-        list_pushBack(escenario->items, crearItem(nombre, peso, valor));
-        token = strtok(NULL, ";");
-    }
+Graph* copy_graph(Graph* original) {
+  Graph* copy = create_graph();
+  for (int i = 0; i < 256; i++) {
+      if (original->Rooms[i] != NULL) {
+          Room* r = original->Rooms[i];
+          Room* newRoom = malloc(sizeof(Room));
+          *newRoom = *r;
+          newRoom->items = list_create();
+          for (Item* it = list_first(r->items); it != NULL; it = list_next(r->items)) {
+              Item* newItem = malloc(sizeof(Item));
+              *newItem = *it;
+              list_pushBack(newRoom->items, newItem);
+          }
+          copy->Rooms[i] = newRoom;
+      }
+  }
+  copy->roomCount = original->roomCount;
+  return copy;
 }
 
-// ------------------ CARGA CSV ------------------
-
-void cargarLaberinto() {
-    FILE* file = fopen("graphquest.csv", "r");
-    if (!file) {
-        printf("No se pudo abrir el archivo.\n");
-        return;
+void restore_labyrinth() {
+    for (int i = 0; i < 256; i++) {
+        if (labyrinth->Rooms[i]) {
+            Room* r = labyrinth->Rooms[i];
+            for (Item* it = list_first(r->items); it != NULL; it = list_next(r->items)) {
+                free(it);
+            }
+            list_clean(r->items);
+            free(r->items);
+            free(r);
+            labyrinth->Rooms[i] = NULL;
+        }
     }
-    char line[MAX_LINE_LENGTH];
-    fgets(line, MAX_LINE_LENGTH, file); // Saltar cabecera
+    for (int i = 0; i < 256; i++) {
+        if (labyrinth_backup->Rooms[i]) {
+            Room* r = labyrinth_backup->Rooms[i];
+            Room* newRoom = malloc(sizeof(Room));
+            *newRoom = *r;
+            newRoom->items = list_create();
+            for (Item* it = list_first(r->items); it != NULL; it = list_next(r->items)) {
+                Item* newItem = malloc(sizeof(Item));
+                *newItem = *it;
+                list_pushBack(newRoom->items, newItem);
+            }
+            labyrinth->Rooms[i] = newRoom;
+        }
+    }
+    labyrinth->roomCount = labyrinth_backup->roomCount;
+}
 
-    while (fgets(line, MAX_LINE_LENGTH, file)) {
-        int id, arriba, abajo, izquierda, derecha, esFinal = 0;
-        char nombre[100], descripcion[300], items_str[300], final_str[10];
+void show_main_menu() {
+  printf("\n--- GraphQuest ---\n");
+  printf("1. Load Labyrinth from CSV\n");
+  printf("2. Start Game\n");
+  printf("3. Exit\n");
+  printf("Select an option: ");
+}
 
-        sscanf(line, "%d,%[^,],\"%[^\"]\",%[^,],%d,%d,%d,%d,%[^\n]",
-               &id, nombre, descripcion, items_str, &arriba, &abajo, &izquierda, &derecha, final_str);
+int load_rooms() {
+    char fileName[256];
+    printf("Enter the name of the CSV file containing your labyrinth: ");
+    scanf("%s", fileName);
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
 
-        if (strcmp(final_str, "Si") == 0) esFinal = 1;
+    FILE *file = fopen(fileName, "r");
+    if (file == NULL) {
+        perror("Error opening file");
+        return 0;
+    }
 
-        Escenario* e = crearEscenario(id, nombre, descripcion, arriba, abajo, izquierda, derecha, esFinal);
-        if (strlen(items_str) > 1) cargarItems(e, items_str);
-        escenarios[total_escenarios++] = e;
+    char **fields;
+    fields = read_line_csv(file, ',');
+
+    while ((fields = read_line_csv(file, ',')) != NULL) {
+        Room* r = malloc(sizeof(Room));
+        r->id = atoi(fields[0]);
+        strcpy(r->name, fields[1]);
+        strcpy(r->description, fields[2]);
+        r->items = list_create();
+
+        List* items = split_string(fields[3], ";");
+        for(char *item = list_first(items); item != NULL; item = list_next(items)){
+            List* values = split_string(item, ",");
+            Item* it = malloc(sizeof(Item));
+            strcpy(it->name, list_first(values));
+            it->value = atoi(list_next(values));
+            it->weight = atoi(list_next(values));
+            list_pushBack(r->items, it);
+            list_clean(values);
+            free(values);
+        }
+        list_clean(items);
+        free(items);
+
+        r->up = atoi(fields[4]);
+        r->down = atoi(fields[5]);
+        r->left = atoi(fields[6]);
+        r->right = atoi(fields[7]);
+        r->is_final = (strcmp(fields[8], "Si") == 0 || strcmp(fields[8], "si") == 0);
+
+        labyrinth->Rooms[r->id] = r;
+        labyrinth->roomCount++;
     }
     fclose(file);
-    jugador.ubicacion = buscarEscenarioPorID(1); // Entrada principal
-    jugador.inventario = list_create();
-    jugador.tiempo = 10;
-    jugador.puntaje = 0;
-    printf("Laberinto cargado con %d escenarios.\n", total_escenarios);
+    labyrinth_backup = copy_graph(labyrinth);
+    return 1;
 }
 
-// ------------------ JUEGO ------------------
+void show_status(Player* player, Room* current_room) {
+  printf("\n=== Current Status ===\n");
+  printf("Room: %s\n", current_room->name);
+  printf("Description: %s\n", current_room->description);
 
-int calcularTiempoMovimiento() {
-    int peso = 0;
-    Item* item = list_first(jugador.inventario);
-    while (item) {
-        peso += item->peso;
-        item = list_next(jugador.inventario);
-    }
-    return (peso + 1 + 9) / 10; // ceil
+  printf("\nItems in the room:\n");
+  int i = 1;
+  for (Item* it = list_first(current_room->items); it != NULL; it = list_next(current_room->items)) {
+      printf("  %d) %s (Value: %d, Weight: %d)\n", i++, it->name, it->value, it->weight);
+  }
+  if (i == 1) printf("  (No items in this room)\n");
+
+  printf("\nRemaining time: %d\n", player->remainingTime);
+
+  printf("\nPlayer's inventory:\n");
+  int total_weight = 0, total_score = 0, j = 1;
+  for (Item* it = list_first(player->items); it != NULL; it = list_next(player->items)) {
+      printf("  %d) %s (Value: %d, Weight: %d)\n", j++, it->name, it->value, it->weight);
+      total_weight += it->weight;
+      total_score += it->value;
+  }
+  if (j == 1) printf("  (Empty inventory)\n");
+  printf("Total weight: %d\n", total_weight);
+  printf("Accumulated score: %d\n", total_score);
+
+  printf("\nAvailable directions:\n");
+  if (current_room->up != -1)    printf("  - Up\n");
+  if (current_room->down != -1)     printf("  - Down\n");
+  if (current_room->left != -1) printf("  - Left\n");
+  if (current_room->right != -1)   printf("  - Right\n");
 }
 
-void mostrarEstado() {
-    Escenario* e = jugador.ubicacion;
-    printf("\n=== %s ===\n%s\n\n", e->nombre, e->descripcion);
-    printf("Items en este escenario:\n");
-    Item* item = list_first(e->items);
-    while (item) {
-        printf("- %s (Peso: %d, Valor: %d)\n", item->nombre, item->peso, item->valor);
-        item = list_next(e->items);
-    }
-    printf("\nInventario:\n");
-    item = list_first(jugador.inventario);
-    int peso_total = 0;
-    while (item) {
-        printf("* %s (Peso: %d, Valor: %d)\n", item->nombre, item->peso, item->valor);
-        peso_total += item->peso;
-        item = list_next(jugador.inventario);
-    }
-    printf("Peso total: %d | Puntaje: %d | Tiempo restante: %d\n", peso_total, jugador.puntaje, jugador.tiempo);
+Room* get_initial_room(Graph* labyrinth) {
+  for (int i = 0; i < 256; i++) {
+      if (labyrinth->Rooms[i] != NULL) {
+          return labyrinth->Rooms[i];
+      }
+  }
+  return NULL;
 }
 
-void iniciarPartida(); // Declaración anticipada
+void move_forward(Player* player, Room** current_room, Graph* labyrinth, int* playing) {
+    char direction[20];
+    printf("Which direction do you want to move? (up/down/left/right): ");
+    scanf("%s", direction);
 
-void menuJuego() {
-    int opcion;
+    int new_id = -1;
+    if (strcmp(direction, "up") == 0 && (*current_room)->up != -1)
+        new_id = (*current_room)->up;
+    else if (strcmp(direction, "down") == 0 && (*current_room)->down != -1)
+        new_id = (*current_room)->down;
+    else if (strcmp(direction, "left") == 0 && (*current_room)->left != -1)
+        new_id = (*current_room)->left;
+    else if (strcmp(direction, "right") == 0 && (*current_room)->right != -1)
+        new_id = (*current_room)->right;
+    else {
+        printf("Invalid or unavailable direction.\n");
+        return;
+    }
+
+    Room* new_room = labyrinth->Rooms[new_id];
+    if (new_room == NULL) {
+        printf("No room in that direction.\n");
+        return;
+    }
+
+    int total_weight = 0;
+    for (Item* it = list_first(player->items); it != NULL; it = list_next(player->items)) {
+        total_weight += it->weight;
+    }
+
+    int time_penalty = (int)ceil((total_weight + 1) / 10.0);
+    player->remainingTime -= time_penalty;
+
+    if (player->remainingTime <= 0) {
+        printf("You've run out of time! Game over.\n");
+        *playing = 0;
+        return;
+    }
+
+    *current_room = new_room;
+    printf("You moved to the room: %s\n", new_room->name);
+
+    if (new_room->is_final) {
+        *playing = 0;
+        return;
+    }
+}
+
+void collect_items(Player* player, Room* current_room) {
+    if (list_size(current_room->items) == 0) {
+        printf("There are no items to collect in this room.\n");
+        return;
+    }
+
+    printf("Items available for collection:\n");
+    int i = 1;
+    for (Item* it = list_first(current_room->items); it != NULL; it = list_next(current_room->items)) {
+        printf("  %d) %s (Value: %d, Weight: %d)\n", i++, it->name, it->value, it->weight);
+    }
+    printf("Enter the number of the item to collect (0 to finish): ");
+    int choice;
     while (1) {
-        mostrarEstado();
-        printf("\nOpciones:\n");
-        printf("1. Recoger ítem\n2. Descartar ítem\n3. Avanzar\n4. Reiniciar partida\n5. Salir\n");
-        scanf("%d", &opcion);
+        scanf("%d", &choice);
+        if (choice == 0) break;
+        if (choice < 1 || choice > list_size(current_room->items)) {
+            printf("Invalid option. Try again: ");
+            continue;
+        }
+        int idx = 1;
+        Item* selected = NULL;
+        for (Item* it = list_first(current_room->items); it != NULL; it = list_next(current_room->items)) {
+            if (idx == choice) {
+                selected = it;
+                break;
+            }
+            idx++;
+        }
+        if (selected) {
+            Item* newItem = malloc(sizeof(Item));
+            strcpy(newItem->name, selected->name);
+            newItem->value = selected->value;
+            newItem->weight = selected->weight;
+            list_pushBack(player->items, newItem);
+            player->score += newItem->value;
 
-        if (jugador.tiempo <= 0) {
-            printf("Se acabó el tiempo. Has perdido.\n");
+            list_popCurrent(current_room->items);
+
+            player->remainingTime -= 1;
+            if (player->remainingTime <= 0) {
+                printf("You have run out of time! Game over.\n");
+                break;
+            }
+
+            printf("You collected: %s\n", newItem->name);
+        }
+        if (list_size(current_room->items) == 0) {
+            printf("There are no more items in the room.\n");
             break;
         }
+        printf("Remaining items:\n");
+        idx = 1;
+        for (Item* it = list_first(current_room->items); it != NULL; it = list_next(current_room->items)) {
+            printf("  %d) %s (Value: %d, Weight: %d)\n", idx++, it->name, it->value, it->weight);
+        }
+        printf("Enter the number of the item to collect (0 to finish): ");
+    }
+}
 
-        if (opcion == 1) {
-            char nombre[50];
-            printf("Nombre del ítem a recoger: ");
-            scanf("%s", nombre);
-            Item* item = list_first(jugador.ubicacion->items);
-            while (item) {
-                if (strcmp(item->nombre, nombre) == 0) {
-                    list_pushBack(jugador.inventario, item);
-                    jugador.puntaje += item->valor;
-                    list_popFront(jugador.ubicacion->items);
-                    jugador.tiempo--;
-                    break;
-                }
-                item = list_next(jugador.ubicacion->items);
-            }
-        } else if (opcion == 2) {
-            char nombre[50];
-            printf("Nombre del ítem a descartar: ");
-            scanf("%s", nombre);
-            Item* item = list_first(jugador.inventario);
-            while (item) {
-                if (strcmp(item->nombre, nombre) == 0) {
-                    list_popFront(jugador.inventario);
-                    jugador.puntaje -= item->valor;
-                    jugador.tiempo--;
-                    break;
-                }
-                item = list_next(jugador.inventario);
-            }
-        } else if (opcion == 3) {
-            char dir;
-            printf("Dirección (W=Arriba, S=Abajo, A=Izq, D=Derecha): ");
-            scanf(" %c", &dir);
-            int id_dest = -1;
-            if (dir == 'W') id_dest = jugador.ubicacion->arriba;
-            else if (dir == 'S') id_dest = jugador.ubicacion->abajo;
-            else if (dir == 'A') id_dest = jugador.ubicacion->izquierda;
-            else if (dir == 'D') id_dest = jugador.ubicacion->derecha;
+void discard_items(Player* player) {
+    if (list_size(player->items) == 0) {
+        printf("You have no items to discard.\n");
+        return;
+    }
 
-            if (id_dest == -1) {
-                printf("No hay camino en esa dirección.\n");
-            } else {
-                jugador.ubicacion = buscarEscenarioPorID(id_dest);
-                jugador.tiempo -= calcularTiempoMovimiento();
-                if (jugador.ubicacion->esFinal) {
-                    printf("¡Llegaste al final! Puntaje final: %d\n", jugador.puntaje);
-                    break;
-                }
+    int choice;
+    while (1) {
+        printf("\nItems in your inventory:\n");
+        int i = 1;
+        for (Item* it = list_first(player->items); it != NULL; it = list_next(player->items)) {
+            printf("  %d) %s (Value: %d, Weight: %d)\n", i++, it->name, it->value, it->weight);
+        }
+        printf("Enter the number of the item to discard (0 to finish): ");
+        scanf("%d", &choice);
+
+        if (choice == 0) break;
+        if (choice < 1 || choice > list_size(player->items)) {
+            printf("Invalid option. Try again.\n");
+            continue;
+        }
+
+        int idx = 1;
+        Item* selected = NULL;
+        for (Item* it = list_first(player->items); it != NULL; it = list_next(player->items)) {
+            if (idx == choice) {
+                selected = it;
+                break;
             }
-        } else if (opcion == 4) {
-            iniciarPartida();
-            break;
-        } else if (opcion == 5) {
+            idx++;
+        }
+        if (selected) {
+            printf("You discarded: %s\n", selected->name);
+            list_popCurrent(player->items);
+            free(selected);
+
+            player->remainingTime -= 1;
+            if (player->remainingTime <= 0) {
+                printf("You're out of time! Game over.\n");
+                break;
+            }
+        }
+        if (list_size(player->items) == 0) {
+            printf("You have no more items in your inventory.\n");
             break;
         }
     }
 }
 
-void iniciarPartida() {
-    jugador.ubicacion = buscarEscenarioPorID(1);
-    jugador.inventario = list_create();
-    jugador.tiempo = 10;
-    jugador.puntaje = 0;
-    menuJuego();
-}
+void game_menu() {
+    int option;
+    int playing = 1;
 
-// ------------------ MENÚ PRINCIPAL ------------------
+    Player player;
+    player.items = list_create();
+    player.remainingTime  = 10;
+    player.carriedWeight = 0;
+    player.score = 0;
+
+    Room* current_room = get_initial_room(labyrinth);
+    if (current_room == NULL) {
+        printf("Initial room not found.\n");
+        return;
+    }
+
+    while (playing) {
+        if (current_room->is_final) {
+            break;
+        }
+        show_status(&player, current_room);
+        printf("\n--- Game Menu ---\n");
+        printf("1. Pick up item(s)\n");
+        printf("2. Discard item(s)\n");
+        printf("3. Move in a direction\n");
+        printf("4. Restart game\n");
+        printf("5. Exit game\n");
+        printf("Choose an option: ");
+        scanf("%d", &option);
+
+        switch(option) {
+            case 1:
+                collect_items(&player, current_room);
+                break;
+            case 2:
+                discard_items(&player);
+                break;
+            case 3:
+                move_forward(&player, &current_room, labyrinth, &playing);
+                if (!playing) continue;
+                break;
+            case 4:
+                printf("Restarting game...\n");
+                clear_inventory(&player);
+                restore_labyrinth();
+                player.remainingTime = 10;
+                player.carriedWeight = 0;
+                player.score = 0;
+                current_room = get_initial_room(labyrinth);
+                break;
+            case 5:
+                printf("Exiting game...\n");
+                playing = 0;
+                break;
+            default:
+                printf("Invalid option.\n");
+        }
+    }
+
+    if (current_room->is_final) {
+        show_status(&player, current_room);
+        printf("\nCongratulations! You've reached the final room.\n");
+        printf("Final score: %d\n", player.score);
+        printf("Collected items:\n");
+        int i = 1;
+        for (Item* it = list_first(player.items); it != NULL; it = list_next(player.items)) {
+            printf("  %d) %s (Value: %d, Weight: %d)\n", i++, it->name, it->value, it->weight);
+        }
+        if (i == 1) printf("  (You didn't collect any items)\n");
+        printf("Press ENTER to return to the main menu...");
+        getchar();
+        getchar();
+    }
+}
 
 int main() {
-    int opcion;
-    while (1) {
-        printf("\n=== GRAPHQUEST ===\n1. Cargar laberinto\n2. Iniciar partida\n3. Salir\n");
-        scanf("%d", &opcion);
-        if (opcion == 1) cargarLaberinto();
-        else if (opcion == 2) iniciarPartida();
-        else if (opcion == 3) break;
-    }
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    labyrinth = create_graph();
+
+    int option;
+    int is_ready = 0;
+
+    do {
+        show_main_menu();
+        char buffer[32];
+        if (!fgets(buffer, sizeof(buffer), stdin)) break;
+        char *endptr;
+        option = strtol(buffer, &endptr, 10);
+        if (endptr == buffer || *endptr != '\n') {
+            printf("Invalid option.\n");
+            continue;
+        }
+
+        switch(option) {
+            case 1:
+                if (load_rooms()) {
+                    is_ready = 1;
+                    printf("Labyrinth successfully loaded.\n");
+                }
+                break;
+            case 2:
+                if (!is_ready) {
+                    printf("You must first load a labyrinth.\n");
+                } else {
+                    game_menu();
+                    int c;
+                    while ((c = getchar()) != '\n' && c != EOF);
+                }
+                break;
+            case 3:
+                printf("Goodbye!\n");
+                break;
+        }
+    } while (option != 3);
+
     return 0;
 }
