@@ -37,13 +37,13 @@
  * - La función asume que ninguna línea del CSV excede MAX_LINE_LENGTH
  * caracteres y que no hay más de MAX_FIELDS campos por línea.
  */
-char **leer_linea_csv(FILE *archivo, char separador);
+char **read_line_csv(FILE *archivo, char separador);
 
 List *split_string(const char *str, const char *delim);
 
 // Función para limpiar la pantalla
-void limpiarPantalla();
+void clearScreen();
 
-void presioneTeclaParaContinuar();
+void waitForKeyPress();
 
 #endif

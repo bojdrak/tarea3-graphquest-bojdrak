@@ -4,18 +4,18 @@
 #define MAX_LINE_LENGTH 4096
 #define MAX_FIELDS      128
 
-char **leer_linea_csv(FILE *archivo, char separador) {
-    static char linea[MAX_LINE_LENGTH];
-    static char *campos[MAX_FIELDS];
+char **read_line_csv(FILE *file, char separator) {
+    static char line[MAX_LINE_LENGTH];
+    static char *field[MAX_FIELDS];
     int idx = 0;
 
-    if (fgets(linea, MAX_LINE_LENGTH, archivo) == NULL)
+    if (fgets(line, MAX_LINE_LENGTH, file) == NULL)
         return NULL;  // fin de fichero
 
     // quitar salto de línea
-    linea[strcspn(linea, "\r\n")] = '\0';
+    line[strcspn(line, "\r\n")] = '\0';
 
-    char *ptr = linea;
+    char *ptr = line;
     while (*ptr && idx < MAX_FIELDS - 1) {
         char *start;
 
@@ -42,24 +42,24 @@ char **leer_linea_csv(FILE *archivo, char separador) {
             *dest = '\0';        // terminar cadena
 
             // ahora ptr apunta justo después de la comilla de cierre
-            if (*ptr == separador) ptr++;
+            if (*ptr == separator) ptr++;
         }
         else {
             // campo sin comillas
             start = ptr;
-            while (*ptr && *ptr != separador)
+            while (*ptr && *ptr != separator)
                 ptr++;
-            if (*ptr == separador) {
+            if (*ptr == separator) {
                 *ptr = '\0';
                 ptr++;
             }
         }
 
-        campos[idx++] = start;
+        field[idx++] = start;
     }
 
-    campos[idx] = NULL;
-    return campos;
+    field[idx] = NULL;
+    return field;
 }
 
 
@@ -94,10 +94,11 @@ List *split_string(const char *str, const char *delim) {
 }
 
 // Función para limpiar la pantalla
-void limpiarPantalla() { system("clear"); }
+void clearScreen() {
+  printf("\033[H\033[J");
+}
 
-void presioneTeclaParaContinuar() {
-  puts("Presione una tecla para continuar...");
-  getchar(); // Consume el '\n' del buffer de entrada
-  getchar(); // Espera a que el usuario presione una tecla
+void waitForKeyPress() {
+  printf("Presione Enter para continuar...");
+  while (getchar() != '\n');
 }
