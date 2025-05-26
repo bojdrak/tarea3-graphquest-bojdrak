@@ -184,6 +184,17 @@ void *list_popCurrent(List *L) {
   return data;
 }
 
+void* list_get(List* list, int index) {
+    if (!list || index < 0) return NULL;
+    Node* current = list->head;
+    int i = 0;
+    while (current && i < index) {
+        current = current->next;
+        i++;
+    }
+    return current ? current->data : NULL;
+}
+
 void list_clean(List *L) {
   if (L == NULL) {
     return; // Lista no inicializada

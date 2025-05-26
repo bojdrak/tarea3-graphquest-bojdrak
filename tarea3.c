@@ -1,353 +1,239 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
+#include <ctype.h>
 #include <math.h>
-#include <windows.h>
+#include "tdas/list.h"
 
-#include "tdas/list.h" 
-#include "tdas/extra.h"
+#define MAX_LINE_LENGTH 1024
+#define MAX_ESCENARIOS 100
 
-#define DELIM ","
+// ------------------ ESTRUCTURAS ------------------
+typedef struct Item {
+    char nombre[50];
+    int peso;
+    int valor;
+} Item;
 
-// Structs del juego
-typedef struct item {
-    char *name;
-    int weight;
-    int value;
-} item_t;
-
-typedef struct scenario {
+typedef struct Escenario {
     int id;
-    char *name;
-    char *description;
-    List *items;         // Lista de items*
-    int connections[4];  // [up, down, left, right]
-    bool is_final;
-} scenario_t;
+    char nombre[100];
+    char descripcion[300];
+    List* items;
+    int arriba, abajo, izquierda, derecha;
+    int esFinal;
+} Escenario;
 
-typedef struct world_graph {
-    scenario_t **scenarios;
-    int count;
-    int capacity;
-} world_graph_t;
+typedef struct Jugador {
+    Escenario* ubicacion;
+    List* inventario;
+    int tiempo;
+    int puntaje;
+} Jugador;
 
-// Variables globales
-int current_scenario_id = 0;
-int time_left = 30;
-List *inventory = NULL;
+// ------------------ VARIABLES GLOBALES ------------------
 
- char **split_line(char *line, int *count) {
-    int capacity = 16;
-    char **tokens = malloc(capacity * sizeof(char*));
-    *count = 0;
+Escenario* escenarios[MAX_ESCENARIOS];
+int total_escenarios = 0;
+Jugador jugador;
 
-    char *token = strtok(line, DELIM);
-    while(token) {
-        if (*count >= capacity) {
-            capacity *= 2;
-            tokens = realloc(tokens, capacity * sizeof(char*));
-        }
-        tokens[*count] = strdup(token);
-        (*count)++;
-        token = strtok(NULL, DELIM);
-    }
-    return tokens;
+// ------------------ FUNCIONES AUXILIARES ------------------
+
+Escenario* crearEscenario(int id, char* nombre, char* descripcion, int arriba, int abajo, int izquierda, int derecha, int esFinal) {
+    Escenario* e = (Escenario*)malloc(sizeof(Escenario));
+    e->id = id;
+    strcpy(e->nombre, nombre);
+    strcpy(e->descripcion, descripcion);
+    e->arriba = arriba;
+    e->abajo = abajo;
+    e->izquierda = izquierda;
+    e->derecha = derecha;
+    e->esFinal = esFinal;
+    e->items = list_create();
+    return e;
 }
 
-void free_tokens(char **tokens, int count) {
-    for (int i = 0; i < count; i++) {
-        free(tokens[i]);
-    }
-    free(tokens);
+Item* crearItem(char* nombre, int peso, int valor) {
+    Item* i = (Item*)malloc(sizeof(Item));
+    strcpy(i->nombre, nombre);
+    i->peso = peso;
+    i->valor = valor;
+    return i;
 }
 
-scenario_t *create_scenario_from_tokens(char **tokens, int count) {
-    if (count < 10) return NULL;
-
-    scenario_t *scen = malloc(sizeof(scenario_t));
-    if (!scen) return NULL;
-
-    scen->id = atoi(tokens[0]);
-    scen->name = strdup(tokens[1]);
-    scen->description = strdup(tokens[2]);
-
-    scen->items = list_create();
-    if (tokens[3][0] != '\0') {
-        char *item_str = strdup(tokens[3]);
-        char *item_token = strtok(item_str, ";");
-        while (item_token) {
-            list_pushBack(scen->items, strdup(item_token));
-            item_token = strtok(NULL, ";");
-        }
-        free(item_str);
-    }
-
-    scen->connections[0] = atoi(tokens[4]);
-    scen->connections[1] = atoi(tokens[5]);
-    scen->connections[2] = atoi(tokens[6]);
-    scen->connections[3] = atoi(tokens[7]);
-
-    scen->is_final = (strcmp(tokens[8], "Si") == 0 || strcmp(tokens[8], "si") == 0);
-
-    return scen;
-}
-
-void destroy_scenario(scenario_t *scen) {
-    if (!scen) return;
-    free(scen->name);
-    free(scen->description);
-    for (int i = 0; i < list_size(scen->items); i++) {
-        free(list_get(scen->items, i));
-    }
-    list_destroy(scen->items);
-    free(scen);
-}
-
-world_graph_t *parse_game_data(const char *filename) {
-    FILE *file = fopen(filename, "r");
-    if (!file) {
-        perror("Error al abrir archivo CSV");
-        return NULL;
-    }
-
-    char buffer[4096];
-    int line_num = 0;
-
-    world_graph_t *graph = malloc(sizeof(world_graph_t));
-    graph->capacity = 16;
-    graph->count = 0;
-    graph->scenarios = malloc(graph->capacity * sizeof(scenario_t*));
-
-    if (!fgets(buffer, sizeof(buffer), file)) {
-        fclose(file);
-        free(graph->scenarios);
-        free(graph);
-        return NULL;
-    }
-
-    while (fgets(buffer, sizeof(buffer), file)) {
-        line_num++;
-
-        int token_count = 0;
-        char *line = strdup(buffer);
-        char **tokens = split_line(line, &token_count);
-
-        scenario_t *scen = create_scenario_from_tokens(tokens, token_count);
-
-        if (scen) {
-            if (graph->count == graph->capacity) {
-                graph->capacity *= 2;
-                graph->scenarios = realloc(graph->scenarios, graph->capacity * sizeof(scenario_t*));
-            }
-            graph->scenarios[graph->count++] = scen;
-        }
-
-        free_tokens(tokens, token_count);
-        free(line);
-    }
-
-    fclose(file);
-    return graph;
-}
-
-// Función auxiliar para buscar escenario
-scenario_t *get_scenario_by_id(world_graph_t *world, int id) {
-    for (int i = 0; i < world->count; i++) {
-        if (world->scenarios[i]->id == id) return world->scenarios[i];
+Escenario* buscarEscenarioPorID(int id) {
+    for (int i = 0; i < total_escenarios; i++) {
+        if (escenarios[i]->id == id) return escenarios[i];
     }
     return NULL;
 }
 
-// Mostrar info del escenario actual
-void print_current_scenario(world_graph_t *world) {
-    scenario_t *sc = get_scenario_by_id(world, current_scenario_id);
-    if (!sc) {
-        printf("Error: escenario no encontrado\n");
+void cargarItems(Escenario* escenario, char* str) {
+    char* token = strtok(str, ";");
+    while (token != NULL) {
+        char nombre[50];
+        int peso, valor;
+        sscanf(token, "%[^,],%d,%d", nombre, &peso, &valor);
+        list_pushBack(escenario->items, crearItem(nombre, peso, valor));
+        token = strtok(NULL, ";");
+    }
+}
+
+// ------------------ CARGA CSV ------------------
+
+void cargarLaberinto() {
+    FILE* file = fopen("graphquest.csv", "r");
+    if (!file) {
+        printf("No se pudo abrir el archivo.\n");
         return;
     }
+    char line[MAX_LINE_LENGTH];
+    fgets(line, MAX_LINE_LENGTH, file); // Saltar cabecera
 
-    printf("\nEstas en: %s\n", sc->name);
-    printf("%s\n", sc->description);
-    printf("Items disponibles:\n");
-    for (int i = 0; i < list_size(sc->items); i++) {
-        item_t *it = list_get(sc->items, i);
-        printf(" - %s (peso: %d, valor: %d)\n", it->name, it->weight, it->value);
+    while (fgets(line, MAX_LINE_LENGTH, file)) {
+        int id, arriba, abajo, izquierda, derecha, esFinal = 0;
+        char nombre[100], descripcion[300], items_str[300], final_str[10];
+
+        sscanf(line, "%d,%[^,],\"%[^\"]\",%[^,],%d,%d,%d,%d,%[^\n]",
+               &id, nombre, descripcion, items_str, &arriba, &abajo, &izquierda, &derecha, final_str);
+
+        if (strcmp(final_str, "Si") == 0) esFinal = 1;
+
+        Escenario* e = crearEscenario(id, nombre, descripcion, arriba, abajo, izquierda, derecha, esFinal);
+        if (strlen(items_str) > 1) cargarItems(e, items_str);
+        escenarios[total_escenarios++] = e;
     }
+    fclose(file);
+    jugador.ubicacion = buscarEscenarioPorID(1); // Entrada principal
+    jugador.inventario = list_create();
+    jugador.tiempo = 10;
+    jugador.puntaje = 0;
+    printf("Laberinto cargado con %d escenarios.\n", total_escenarios);
+}
 
-    printf("Conexiones:\n");
-    char *directions[4] = {"Arriba", "Abajo", "Izquierda", "Derecha"};
-    for (int d = 0; d < 4; d++) {
-        int conn = sc->connections[d];
-        if (conn != -1) {
-            scenario_t *next = get_scenario_by_id(world, conn);
-            if (next)
-                printf(" %s: %s\n", directions[d], next->name);
+// ------------------ JUEGO ------------------
+
+int calcularTiempoMovimiento() {
+    int peso = 0;
+    Item* item = list_first(jugador.inventario);
+    while (item) {
+        peso += item->peso;
+        item = list_next(jugador.inventario);
+    }
+    return (peso + 1 + 9) / 10; // ceil
+}
+
+void mostrarEstado() {
+    Escenario* e = jugador.ubicacion;
+    printf("\n=== %s ===\n%s\n\n", e->nombre, e->descripcion);
+    printf("Items en este escenario:\n");
+    Item* item = list_first(e->items);
+    while (item) {
+        printf("- %s (Peso: %d, Valor: %d)\n", item->nombre, item->peso, item->valor);
+        item = list_next(e->items);
+    }
+    printf("\nInventario:\n");
+    item = list_first(jugador.inventario);
+    int peso_total = 0;
+    while (item) {
+        printf("* %s (Peso: %d, Valor: %d)\n", item->nombre, item->peso, item->valor);
+        peso_total += item->peso;
+        item = list_next(jugador.inventario);
+    }
+    printf("Peso total: %d | Puntaje: %d | Tiempo restante: %d\n", peso_total, jugador.puntaje, jugador.tiempo);
+}
+
+void iniciarPartida(); // Declaración anticipada
+
+void menuJuego() {
+    int opcion;
+    while (1) {
+        mostrarEstado();
+        printf("\nOpciones:\n");
+        printf("1. Recoger ítem\n2. Descartar ítem\n3. Avanzar\n4. Reiniciar partida\n5. Salir\n");
+        scanf("%d", &opcion);
+
+        if (jugador.tiempo <= 0) {
+            printf("Se acabó el tiempo. Has perdido.\n");
+            break;
+        }
+
+        if (opcion == 1) {
+            char nombre[50];
+            printf("Nombre del ítem a recoger: ");
+            scanf("%s", nombre);
+            Item* item = list_first(jugador.ubicacion->items);
+            while (item) {
+                if (strcmp(item->nombre, nombre) == 0) {
+                    list_pushBack(jugador.inventario, item);
+                    jugador.puntaje += item->valor;
+                    list_popFront(jugador.ubicacion->items);
+                    jugador.tiempo--;
+                    break;
+                }
+                item = list_next(jugador.ubicacion->items);
+            }
+        } else if (opcion == 2) {
+            char nombre[50];
+            printf("Nombre del ítem a descartar: ");
+            scanf("%s", nombre);
+            Item* item = list_first(jugador.inventario);
+            while (item) {
+                if (strcmp(item->nombre, nombre) == 0) {
+                    list_popFront(jugador.inventario);
+                    jugador.puntaje -= item->valor;
+                    jugador.tiempo--;
+                    break;
+                }
+                item = list_next(jugador.inventario);
+            }
+        } else if (opcion == 3) {
+            char dir;
+            printf("Dirección (W=Arriba, S=Abajo, A=Izq, D=Derecha): ");
+            scanf(" %c", &dir);
+            int id_dest = -1;
+            if (dir == 'W') id_dest = jugador.ubicacion->arriba;
+            else if (dir == 'S') id_dest = jugador.ubicacion->abajo;
+            else if (dir == 'A') id_dest = jugador.ubicacion->izquierda;
+            else if (dir == 'D') id_dest = jugador.ubicacion->derecha;
+
+            if (id_dest == -1) {
+                printf("No hay camino en esa dirección.\n");
+            } else {
+                jugador.ubicacion = buscarEscenarioPorID(id_dest);
+                jugador.tiempo -= calcularTiempoMovimiento();
+                if (jugador.ubicacion->esFinal) {
+                    printf("¡Llegaste al final! Puntaje final: %d\n", jugador.puntaje);
+                    break;
+                }
+            }
+        } else if (opcion == 4) {
+            iniciarPartida();
+            break;
+        } else if (opcion == 5) {
+            break;
         }
     }
-
-    printf("Tiempo restante: %d\n", time_left);
 }
 
-// Moverse a otra dirección
-void move_to_direction(world_graph_t *world, int direction) {
-    scenario_t *sc = get_scenario_by_id(world, current_scenario_id);
-    if (!sc) {
-        printf("Escenario no válido\n");
-        return;
-    }
-    int next_id = sc->connections[direction];
-    if (next_id == -1) {
-        printf("No puedes ir en esa dirección\n");
-        return;
-    }
-
-    current_scenario_id = next_id;
-    time_left--;
-    printf("Te moviste a %s\n", get_scenario_by_id(world, current_scenario_id)->name);
+void iniciarPartida() {
+    jugador.ubicacion = buscarEscenarioPorID(1);
+    jugador.inventario = list_create();
+    jugador.tiempo = 10;
+    jugador.puntaje = 0;
+    menuJuego();
 }
 
-// Agarrar un ítem
-void pick_up_item(world_graph_t *world) {
-    scenario_t *sc = get_scenario_by_id(world, current_scenario_id);
-    if (!sc || list_size(sc->items) == 0) {
-        printf("No hay items para agarrar\n");
-        return;
-    }
-
-    printf("Items disponibles:\n");
-    for (int i = 0; i < list_size(sc->items); i++) {
-        item_t *it = list_get(sc->items, i);
-        printf(" %d) %s (peso: %d, valor: %d)\n", i + 1, it->name, it->weight, it->value);
-    }
-
-    printf("Ingresa el número del item: ");
-    int choice;
-    scanf("%d", &choice);
-    if (choice < 1 || choice > list_size(sc->items)) {
-        printf("Opción inválida\n");
-        return;
-    }
-
-    item_t *selected = list_get(sc->items, choice - 1);
-    list_remove_at(sc->items, choice - 1);
-    list_pushBack(inventory, selected);
-    printf("Agarraste: %s\n", selected->name);
-}
-
-// Mostrar inventario
-void show_inventory() {
-    if (list_size(inventory) == 0) {
-        printf("Inventario vacío\n");
-        return;
-    }
-    printf("Inventario:\n");
-    for (int i = 0; i < list_size(inventory); i++) {
-        item_t *it = list_get(inventory, i);
-        printf(" - %s (peso: %d, valor: %d)\n", it->name, it->weight, it->value);
-    }
-}
-
-// Revisar si estás en el escenario final
-bool is_final_scenario(world_graph_t *world) {
-    scenario_t *sc = get_scenario_by_id(world, current_scenario_id);
-    return sc && sc->is_final;
-}
-
-// Liberar memoria
-void destroy_world_graph(world_graph_t *world) {
-    for (int i = 0; i < world->count; i++) {
-        scenario_t *sc = world->scenarios[i];
-        free(sc->name);
-        free(sc->description);
-        for (int j = 0; j < list_size(sc->items); j++) {
-            item_t *it = list_get(sc->items, j);
-            free(it->name);
-            free(it);
-        }
-        list_destroy(sc->items);
-        free(sc);
-    }
-    free(world->scenarios);
-    free(world);
-}
-
-void free_game_data(world_graph_t *world) {
-    destroy_world_graph(world);
-    for (int i = 0; i < list_size(inventory); i++) {
-        item_t *it = list_get(inventory, i);
-        free(it->name);
-        free(it);
-    }
-    list_destroy(inventory);
-}
-
-// Menú principal
-void show_menu() {
-    printf("\nOpciones:\n");
-    printf(" 1) Mostrar escenario actual\n");
-    printf(" 2) Moverse (0=arriba, 1=abajo, 2=izquierda, 3=derecha)\n");
-    printf(" 3) Agarrar item\n");
-    printf(" 4) Mostrar inventario\n");
-    printf(" 5) Salir\n");
-    printf("Elige opción: ");
-}
+// ------------------ MENÚ PRINCIPAL ------------------
 
 int main() {
-    inventory = list_create();
-
-    world_graph_t *world = parse_game_data("data/escenarios.csv");
-    if (!world) {
-        printf("No se pudo cargar el archivo de escenarios\n");
-        return 1;
+    int opcion;
+    while (1) {
+        printf("\n=== GRAPHQUEST ===\n1. Cargar laberinto\n2. Iniciar partida\n3. Salir\n");
+        scanf("%d", &opcion);
+        if (opcion == 1) cargarLaberinto();
+        else if (opcion == 2) iniciarPartida();
+        else if (opcion == 3) break;
     }
-
-    printf("Se cargaron %d escenarios correctamente\n", world->count);
-
-    int running = 1;
-    while (running && time_left > 0) {
-        show_menu();
-        int opt;
-        scanf("%d", &opt);
-        switch (opt) {
-            case 1:
-                print_current_scenario(world);
-                break;
-            case 2: {
-                printf("Ingresa dirección (0=arriba,1=abajo,2=izquierda,3=derecha): ");
-                int dir;
-                scanf("%d", &dir);
-                if (dir < 0 || dir > 3) {
-                    printf("Dirección inválida\n");
-                } else {
-                    move_to_direction(world, dir);
-                }
-                break;
-            }
-            case 3:
-                pick_up_item(world); 
-                break;
-            case 4:
-                show_inventory();
-                break;
-            case 5:
-                running = 0;
-                break;
-            default:
-                printf("Opción inválida\n");
-        }
-
-        if (is_final_scenario(world)) {
-            printf("Llegaste al escenario final, ganaste!\n");
-            break;
-        }
-
-        if (time_left <= 0) {
-            printf("Se acabó el tiempo, perdiste :(\n");
-            break;
-        }
-    }
-
-    free_game_data(world);
     return 0;
 }

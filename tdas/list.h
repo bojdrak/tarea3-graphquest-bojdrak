@@ -34,6 +34,9 @@ void *list_popCurrent(List *L);
 // Esta función elimina todos los elementos de la lista.
 void list_clean(List *L);
 
+// Sirve para acceder al elemento en una posición específica de la lista
+void* list_get(List* list, int index);
+
 // Función para insertar ordenado de acuerdo a la función lower_than
 void list_sortedInsert(List *L, void *data,
                        int (*lower_than)(void *data1, void *data2));
