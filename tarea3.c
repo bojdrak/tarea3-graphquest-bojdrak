@@ -5,6 +5,10 @@
 #include <string.h>
 #include <math.h>
 
+// Estructura que representa una sala del laberinto.
+// Cada sala tiene un ID, un nombre, una descripción, una lista de ítems y
+// conexiones a otras salas (arriba, abajo, izquierda, derecha).
+// También se indica si es la sala final del juego.
 typedef struct Room {
   int id;
   char name[50];
@@ -14,17 +18,23 @@ typedef struct Room {
   int is_final;
 } Room;
 
+// Representa todo el laberinto como un grafo compuesto por salas.
+// Usa un arreglo para almacenar hasta 256 salas, y lleva la cuenta de cuántas hay.
 typedef struct Graph {
   Room *Rooms[256];
   int roomCount;
 } Graph;
 
+// Estructura que representa un ítem dentro del juego.
+// Cada ítem tiene un nombre, un valor (puntaje) y un peso (afecta el tiempo).
 typedef struct Item {
   char name[50];
   int value;
   int weight;
 } Item;
 
+// Representa al jugador del juego.
+// Guarda el peso que lleva encima, su puntaje total, el tiempo restante y su inventario de ítems.
 typedef struct Player {
   int carriedWeight;
   int score;
@@ -32,9 +42,12 @@ typedef struct Player {
   List *items;
 } Player;
 
+// Declaración de variables globales: el laberinto actual y una copia de respaldo.
 Graph *labyrinth;
 Graph *labyrinth_backup;
 
+// Función que crea un nuevo grafo vacío y lo inicializa.
+// Inicializa todas las posiciones del arreglo a NULL y cuenta de salas en cero.
 Graph *create_graph() {
   Graph *graph = malloc(sizeof(Graph));
   for (int i = 0; i < 256; i++) {
@@ -44,6 +57,7 @@ Graph *create_graph() {
   return graph;
 }
 
+// Limpia el inventario del jugador liberando la memoria de cada ítem y vaciando la lista.
 void clear_inventory(Player* player) {
     Item* it = list_first(player->items);
     while (it != NULL) {
@@ -53,6 +67,8 @@ void clear_inventory(Player* player) {
     list_clean(player->items);
 }
 
+// Crea una copia exacta de un grafo (laberinto), incluyendo todas las salas y sus ítems.
+// Esto se usa para poder reiniciar el juego desde el estado inicial.
 Graph* copy_graph(Graph* original) {
   Graph* copy = create_graph();
   for (int i = 0; i < 256; i++) {
@@ -73,6 +89,8 @@ Graph* copy_graph(Graph* original) {
   return copy;
 }
 
+// Restaura el laberinto original usando la copia de respaldo.
+// Libera toda la memoria del laberinto actual y copia nuevamente los datos desde la versión guardada.
 void restore_labyrinth() {
     for (int i = 0; i < 256; i++) {
         if (labyrinth->Rooms[i]) {
@@ -102,7 +120,7 @@ void restore_labyrinth() {
     }
     labyrinth->roomCount = labyrinth_backup->roomCount;
 }
-
+// Muestra el menú principal del juego en consola.
 void show_main_menu() {
   printf("\n--- GraphQuest ---\n");
   printf("1. Cargar laberinto CSV\n");
@@ -111,16 +129,19 @@ void show_main_menu() {
   printf("Selccionar Opción: ");
 }
 
+// Esta función carga el archivo CSV que contiene la información del laberinto.
+// Cada fila representa una sala con su descripción, ítems y conexiones a otras salas.
 int load_rooms() {
-    FILE *file = fopen("graphquest.csv", "r");
+    FILE *file = fopen("graphquest.csv", "r");  // Abre el archivo en modo lectura
     if (file == NULL) {
         perror("Error Abriendo el archivo");
         return 0;
     }
 
     char **fields;
-    fields = read_line_csv(file, ',');
+    fields = read_line_csv(file, ',');  // Lee y descarta la cabecera
 
+    // Lee cada línea del CSV y crea una sala
     while ((fields = read_line_csv(file, ',')) != NULL) {
         Room* r = malloc(sizeof(Room));
         r->id = atoi(fields[0]);
@@ -128,6 +149,7 @@ int load_rooms() {
         strcpy(r->description, fields[2]);
         r->items = list_create();
 
+        // Procesa los ítems separados por ";", y cada ítem tiene nombre, valor y peso
         List* items = split_string(fields[3], ";");
         for(char *item = list_first(items); item != NULL; item = list_next(items)){
             List* values = split_string(item, ",");
@@ -142,25 +164,32 @@ int load_rooms() {
         list_clean(items);
         free(items);
 
+        // Define las conexiones de la sala con otras
         r->up = atoi(fields[4]);
         r->down = atoi(fields[5]);
         r->left = atoi(fields[6]);
         r->right = atoi(fields[7]);
         r->is_final = (strcmp(fields[8], "Si") == 0 || strcmp(fields[8], "si") == 0);
 
+        // Añade la sala al laberinto
         labyrinth->Rooms[r->id] = r;
         labyrinth->roomCount++;
     }
+
     fclose(file);
+
+    // Crea una copia de seguridad del laberinto cargado para poder restaurarlo después si se desea
     labyrinth_backup = copy_graph(labyrinth);
     return 1;
 }
 
+// Muestra en consola el estado actual del jugador y la sala en la que se encuentra
 void show_status(Player* player, Room* current_room) {
   printf("\n=== Estado Actual ===\n");
   printf("Sala: %s\n", current_room->name);
   printf("Descripción: %s\n", current_room->description);
 
+  // Lista los ítems disponibles en la sala actual
   printf("\nÍtems en la sala:\n");
   int i = 1;
   for (Item* it = list_first(current_room->items); it != NULL; it = list_next(current_room->items)) {
@@ -168,8 +197,10 @@ void show_status(Player* player, Room* current_room) {
   }
   if (i == 1) printf("  (No hay ítems en esta sala)\n");
 
+  // Muestra el tiempo que le queda al jugador
   printf("\nTiempo restante: %d\n", player->remainingTime);
 
+  // Muestra el inventario del jugador
   printf("\nInventario del jugador:\n");
   int total_weight = 0, total_score = 0, j = 1;
   for (Item* it = list_first(player->items); it != NULL; it = list_next(player->items)) {
@@ -181,6 +212,7 @@ void show_status(Player* player, Room* current_room) {
   printf("Peso total: %d\n", total_weight);
   printf("Puntaje acumulado: %d\n", total_score);
 
+  // Muestra las posibles direcciones que el jugador puede tomar
   printf("\nDirecciones disponibles:\n");
   if (current_room->up != -1)    printf("  - W (arriba)\n");
   if (current_room->down != -1)  printf("  - S (abajo)\n");
@@ -188,7 +220,8 @@ void show_status(Player* player, Room* current_room) {
   if (current_room->right != -1) printf("  - D (derecha)\n");
 }
 
-
+// Esta función retorna la primera sala válida del laberinto.
+// Se asume que es la sala inicial del juego.
 Room* get_initial_room(Graph* labyrinth) {
   for (int i = 0; i < 256; i++) {
       if (labyrinth->Rooms[i] != NULL) {
@@ -198,12 +231,16 @@ Room* get_initial_room(Graph* labyrinth) {
   return NULL;
 }
 
+// Esta función permite al jugador moverse usando las teclas W, A, S, D.
+// También calcula el costo en tiempo del movimiento en base al peso que lleva.
 void move_forward(Player* player, Room** current_room, Graph* labyrinth, int* playing) {
     char direction[10];
     printf("¿A qué dirección quieres avanzar? (W = arriba, S = abajo, A = izquierda, D = derecha): ");
     scanf("%s", direction);
-
+    getchar();  // Limpiar el buffer de entrada
     int new_id = -1;
+
+    // Determina la nueva dirección según la tecla ingresada
     if ((strcmp(direction, "W") == 0 || strcmp(direction, "w") == 0) && (*current_room)->up != -1)
         new_id = (*current_room)->up;
     else if ((strcmp(direction, "S") == 0 || strcmp(direction, "s") == 0) && (*current_room)->down != -1)
@@ -214,6 +251,7 @@ void move_forward(Player* player, Room** current_room, Graph* labyrinth, int* pl
         new_id = (*current_room)->right;
     else {
         printf("Dirección inválida o no disponible.\n");
+        waitForKeyPress();
         return;
     }
 
@@ -223,11 +261,13 @@ void move_forward(Player* player, Room** current_room, Graph* labyrinth, int* pl
         return;
     }
 
+    // Calcula el peso total que el jugador está cargando
     int total_weight = 0;
     for (Item* it = list_first(player->items); it != NULL; it = list_next(player->items)) {
         total_weight += it->weight;
     }
 
+    // El tiempo que se pierde al moverse depende del peso
     int time_penalty = (int)ceil((total_weight + 1) / 10.0);
     player->remainingTime -= time_penalty;
 
@@ -240,14 +280,18 @@ void move_forward(Player* player, Room** current_room, Graph* labyrinth, int* pl
     *current_room = new_room;
     printf("Avanzaste a la sala: %s\n", new_room->name);
 
+    // Si se llega a la sala final, el juego termina
     if (new_room->is_final) {
         *playing = 0;
     }
 }
 
+// Esta función permite al jugador recoger ítems de la sala actual.
+// Los ítems recogidos se agregan al inventario del jugador y se descuentan del tiempo disponible.
 void collect_items(Player* player, Room* current_room) {
     if (list_size(current_room->items) == 0) {
         printf("No hay ítems para recoger en esta sala.\n");
+        waitForKeyPress();
         return;
     }
 
@@ -258,13 +302,18 @@ void collect_items(Player* player, Room* current_room) {
     }
     printf("Ingrese el número del ítem a recoger (0 para terminar): ");
     int choice;
+
+    // Bucle para permitir recoger múltiples ítems
     while (1) {
         scanf("%d", &choice);
+        getchar();  // Limpiar el buffer de entrada
         if (choice == 0) break;
         if (choice < 1 || choice > list_size(current_room->items)) {
             printf("Opción inválida. Intente nuevamente: ");
             continue;
         }
+
+        // Encuentra el ítem seleccionado por el jugador
         int idx = 1;
         Item* selected = NULL;
         for (Item* it = list_first(current_room->items); it != NULL; it = list_next(current_room->items)) {
@@ -274,7 +323,9 @@ void collect_items(Player* player, Room* current_room) {
             }
             idx++;
         }
+
         if (selected) {
+            // Duplica el ítem para añadirlo al inventario del jugador
             Item* newItem = malloc(sizeof(Item));
             strcpy(newItem->name, selected->name);
             newItem->value = selected->value;
@@ -282,8 +333,10 @@ void collect_items(Player* player, Room* current_room) {
             list_pushBack(player->items, newItem);
             player->score += newItem->value;
 
+            // Elimina el ítem de la sala
             list_popCurrent(current_room->items);
 
+            // Se descuenta tiempo por recoger el ítem
             player->remainingTime -= 1;
             if (player->remainingTime <= 0) {
                 printf("¡Te has quedado sin tiempo! Fin del juego.\n");
@@ -292,10 +345,14 @@ void collect_items(Player* player, Room* current_room) {
 
             printf("Recogiste: %s\n", newItem->name);
         }
+
+        // Si ya no quedan ítems, se informa al jugador
         if (list_size(current_room->items) == 0) {
             printf("No quedan más ítems en la sala.\n");
             break;
         }
+
+        // Muestra los ítems restantes en la sala
         printf("Ítems restantes:\n");
         idx = 1;
         for (Item* it = list_first(current_room->items); it != NULL; it = list_next(current_room->items)) {
@@ -305,9 +362,11 @@ void collect_items(Player* player, Room* current_room) {
     }
 }
 
+// Esta función permite al jugador descartar ítems de su inventario.
 void discard_items(Player* player) {
     if (list_size(player->items) == 0) {
         printf("No tienes ítems para descartar.\n");
+        waitForKeyPress();
         return;
     }
 
@@ -320,13 +379,17 @@ void discard_items(Player* player) {
         }
         printf("Ingrese el número del ítem a descartar (0 para terminar): ");
         scanf("%d", &choice);
+        getchar();  // Limpiar el buffer de entrada
 
         if (choice == 0) break;
         if (choice < 1 || choice > list_size(player->items)) {
             printf("Opción inválida. Intente nuevamente.\n");
+            waitForKeyPress();
             continue;
         }
 
+        // Encuentra el ítem seleccionado por el jugador
+        // y lo elimina de su inventario.
         int idx = 1;
         Item* selected = NULL;
         for (Item* it = list_first(player->items); it != NULL; it = list_next(player->items)) {
@@ -354,6 +417,7 @@ void discard_items(Player* player) {
     }
 }
 
+// Esta función maneja el menú del juego, donde el jugador puede interactuar con el laberinto.
 void game_menu() {
     int option;
     int playing = 1;
@@ -364,16 +428,19 @@ void game_menu() {
     player.carriedWeight = 0;
     player.score = 0;
 
+    // Se obtiene la sala inicial del laberinto
     Room* current_room = get_initial_room(labyrinth);
     if (current_room == NULL) {
         printf("No se encontró la sala inicial.\n");
         return;
     }
 
+
     while (playing) {
         if (current_room->is_final) {
             break;
         }
+        // Muestra el estado actual del jugador y la sala
         show_status(&player, current_room);
         printf("\n--- Menú del Juego ---\n");
         printf("1. Recoger ítem(s)\n");
@@ -383,6 +450,7 @@ void game_menu() {
         printf("5. Salir del juego\n");
         printf("Seleccione una opción: ");
         scanf("%d", &option);
+        getchar();  // Limpiar el buffer de entrada
 
         switch(option) {
             case 1:
@@ -397,6 +465,8 @@ void game_menu() {
                 break;
             case 4:
                 printf("Reiniciando partida...\n");
+                waitForKeyPress();
+                
                 clear_inventory(&player);
                 restore_labyrinth();
                 player.remainingTime = 10;
@@ -413,6 +483,7 @@ void game_menu() {
         }
     }
 
+    // Si el jugador llegó a la sala final, muestra el estado final del juego
     if (current_room->is_final) {
         show_status(&player, current_room);
         printf("\n¡Felicidades! Has llegado a la sala final.\n");
@@ -422,13 +493,15 @@ void game_menu() {
         for (Item* it = list_first(player.items); it != NULL; it = list_next(player.items)) {
             printf("  %d) %s (Valor: %d, Peso: %d)\n", i++, it->name, it->value, it->weight);
         }
-        if (i == 1) printf("  (No recogiste ningún ítem)\n");
-        printf("Presiona ENTER para volver al menú principal...");
-        getchar();
-        getchar();
+        if (i == 1) { 
+            printf("  (No recogiste ningún ítem)\n");
+            waitForKeyPress();
+        }
     }
 }
 
+// Función principal que inicia el juego y muestra el menú principal.
+// Permite al usuario cargar un laberinto desde un archivo CSV y comenzar a jugar.
 int main() {
     labyrinth = create_graph();
 

@@ -1,157 +1,159 @@
-# Spotifind
-Este es un programa diseñado con el fin de gestionar una base de datos de canciones. Permite **cargar y buscar** canciones de un archivo CSV de manera eficiente, usando estructuras de datos como Tablas Hash y Listas Enlazadas. El programa tiene un **menú interactivo** que facilita la búsqueda por género, artista y tempo (ritmo de la canción).
+# GraphQuest  
+**GraphQuest** es un juego tipo laberinto donde el jugador debe avanzar entre salas, recolectar ítems y llegar a una sala final antes de quedarse sin tiempo. Las salas están representadas como nodos de un grafo cargado desde un archivo CSV, y el jugador puede moverse usando las teclas **W, A, S, D**.
 
 ## Funcionalidades
 
 ### El programa incluye las siguientes funcionalidades:
 
+**1. Cargar laberinto desde un archivo CSV**  
+Carga la estructura del laberinto desde un archivo `graphquest.csv`. Cada sala contiene información como nombre, descripción, ítems disponibles y conexiones con otras salas.
 
-**1. Cargar canciones desde un archivo CSV**
+**2. Navegación con WASD**  
+El jugador puede moverse por el laberinto usando:
+- `W` para arriba
+- `A` para izquierda
+- `S` para abajo
+- `D` para derecha  
+Cada movimiento consume tiempo dependiendo del peso del inventario.
 
-Carga todas las canciones de un archivo CSV en memoria. Cada canción tiene información como género, artista, tempo y otros atributos relevantes.
+**3. Recolección de ítems**  
+En cada sala, el jugador puede recoger ítems, los cuales tienen un valor (puntaje) y un peso (afecta el tiempo de movimiento).
 
-**2. Buscar canciones por género**
+**4. Inventario del jugador**  
+El jugador puede ver y administrar su inventario:
+- Ver ítems actuales
+- Descartar ítems para reducir peso
 
-Permite al usuario ingresar un género (por ejemplo, "acoustic", "samba", "soul", "anime") y listar todas las canciones que coincidan con ese género.
-
-**3. Buscar canciones por artista**
-
-El usuario puede ingresar el nombre de un artista y se mostrarán todas las canciones asociadas a ese artista.
-
-**4. Buscar canciones por tempo**
-
-El usuario puede filtrar canciones por su tempo (ritmo), eligiendo entre:
-  1) **Lentas:** Tempo menor a 80 BPM.
-  2) **Moderadas:** Tempo entre 80 y 120 BPM.
-  3) **Rápidas:** Tempo mayor a 120 BPM.
+**5. Reinicio de partida**  
+El jugador puede reiniciar el juego en cualquier momento, lo que restablece el laberinto y el estado inicial del jugador.
 
 ## Requisitos
 
-### Software Necesario
-- **gcc:** Para la compilación del código.
+### Software necesario
+- **gcc** para compilar el código.
+- **MSYS2** o cualquier terminal compatible con compilación C en Windows.
 
-- **MSYS2** o cualquier terminal compatible con compilación de C en Windows.
+## Archivos del proyecto
 
-## Archivos del Proyecto
+Asegúrate de tener los siguientes archivos:
 
-Asegúrate de tener todos los siguientes archivos en la misma carpeta antes de ejecutar el programa:
-
-- `tarea2.c:` El archivo principal del programa.
-
-- `tdas/extra.c`, `tdas/extra.h`: Funciones auxiliares.
-
-- `tdas/hashmap.c`, `tdas/hashmap.h`: Implementación de la tabla hash.
-
-- `tdas/list.c`, `tdas/list.h`: Implementación de la lista enlazada.
-
-- `tdas/map.c`, `tdas/map.h`: Implementación del mapa.
-
-- `data/song_dataset_.csv`: El archivo CSV con las canciones.
+- `tarea3.c` – Archivo principal del juego
+- `tdas/extra.c`, `tdas/extra.h` – Funciones auxiliares como `read_line_csv`
+- `tdas/list.c`, `tdas/list.h` – Implementación de lista enlazada
+- `graphquest.csv` – Archivo con la estructura del laberinto
 
 ## Instrucciones de Ejecución
+
 ### Paso 1: Compilación
 
-Para compilar el programa, abre tu terminal en la carpeta del proyecto y ejecuta el siguiente comando:
+Desde la carpeta del proyecto, compila usando:
+
+```bash
+gcc tarea3.c tdas/*.c -o graphquest
 ```
-gcc tarea2.c tdas\*.c -o spotifind
-````
-Este comando compila todos los archivos C y genera el ejecutable spotifind.exe.
 
 ### Paso 2: Ejecución
 
-Una vez compilado, ejecuta el programa con:
-````bash
-./spotifind.exe
-````
+```bash
+./graphquest
+```
 
 ## Menú de Opciones
 
-Al ejecutar el programa, el sistema te presentará un menú con las siguientes opciones:
 ```
-========================================
-    Spotifind - Buscador de canciones
-========================================
-1) Cargar canciones
-2) Buscar por género
-3) Buscar por artista
-4) Buscar por tempo
-5) Salir
-Ingrese una opción: 
+--- GraphQuest ---
+1. Cargar laberinto CSV
+2. Comenzar juego
+3. Salir
+Seleccionar Opción:
 ```
 
+## Menú del Juego
+
+Una vez iniciado el juego:
+
+```
+--- Menú del Juego ---
+1. Recoger ítem(s)
+2. Descartar ítem(s)
+3. Avanzar en una dirección (WASD)
+4. Reiniciar partida
+5. Salir del juego
+Seleccione una opción:
+```
 
 ## Detalles Técnicos
-### Estructura de las canciones
 
-El programa esta almacenando los siguentes campos del CSV:
+### Estructura de las Salas
 
-- Título
-- Album
-- Genero
-- Tempo 
-- ID de la cancion
-- Ritmo de la cancion (en BPM)
+Cada sala contiene:
+- ID
+- Nombre
+- Descripción
+- Ítems (lista enlazada)
+- Conexiones (arriba, abajo, izquierda, derecha)
+- Indicador si es la sala final
 
-El programa lee este CSV y organiza las canciones en una estructura de mapa hash para facilitar la búsqueda eficiente.
+### Estructura del Jugador
 
-## Notas sobre el código
-- Se utiliza un HashMap para almacenar las canciones, permitiendo búsquedas rápidas por género, artista y tempo.
+El jugador tiene:
+- Tiempo restante
+- Puntaje acumulado
+- Peso cargado
+- Inventario (lista enlazada de ítems)
 
-- Las canciones se cargan en memoria y se pueden filtrar rápidamente sin necesidad de leer el archivo repetidamente.
+### Tiempo y Movimiento
 
-- Se implementa un sistema de búsqueda por diferentes criterios (género, artista, tempo) para hacer la experiencia más fluida.
+Cada movimiento consume tiempo en base a la fórmula:
+```
+ceil((peso total + 1) / 10.0)
+```
+
+Recoger o descartar ítems también consume 1 unidad de tiempo.
+
+## Formato del CSV
+
+El archivo `graphquest.csv` debe tener el siguiente formato por línea (sin encabezado obligatorio):
+```
+ID,Nombre,Descripción,"nombre,valor,peso;nombre2,valor2,peso2",Arriba,Abajo,Izquierda,Derecha,Final
+```
+Ejemplo:
+```
+0,Entrada,Una sala fría,"espada,10,3;escudo,5,2",-1,1,-1,-1,no
+```
+
+## Errores Conocidos
+
+- Si el CSV no tiene el formato adecuado, puede generar errores o saltarse salas.
+- El input espera texto o números según el contexto. Ingresar valores inesperados puede producir comportamientos no deseados.
 
 ## Ejemplo de Uso
 
-1. Cargar canciones desde un archivo CSV:
+1. Cargar el laberinto:
 ```
-Se cargaron X canciones.
+Laberinto cargado exitosamente.
 ```
-2. Buscar por género:
+
+2. Avanzar en una dirección:
 ```
-Ingrese el género: acoustic
-
-Título: Comedy
-Artista: Gen Hoshino
-Album: Comedy
-Género: acoustic
-Tempo: 87.92 BPM
-(...)
+¿A qué dirección quieres avanzar? (W = arriba, S = abajo, A = izquierda, D = derecha):
+d
+Avanzaste a la sala: Pasillo Angosto
 ```
-3. Buscar por artista:
+
+3. Recolectar ítems:
 ```
-Ingrese el nombre del artista: Metallica
-
-Título: Nothing Else Matters
-Artista: Metallica
-Album: Metallica
-Género: hard-rock
-Tempo: 142.35 BPM
-(...)
+Ítems disponibles para recoger:
+1) Espada (Valor: 10, Peso: 3)
+2) Antorcha (Valor: 2, Peso: 1)
+Ingrese el número del ítem a recoger (0 para terminar):
 ```
-4. Buscar por tempo:
-````
-Selecciona la categoría de tempo:
-1) Lentas (menos de 80 BPM)
-2) Moderadas (80 - 120 BPM)
-3) Rápidas (más de 120 BPM)
 
-1 <--- Opcion lentas
-
-Título: The Departure
-Artista: Max Richter;Lang Lang
-Album: Voyager - Essential Max Richter
-Género: ambient
-Tempo: 0.00 BPM
-(...)
-
---- Mostradas 200 canciones Lentas ---
-1) Mostrar más
-2) Volver al menú
-````
-En el menú de Genero y Tempo, luego de mostrar 20 canciones, se abre un **menú para evitar sobre carga de informacion**. Esto se puede cambiar en `MAX_SONGS_TEMPO` en las primeras lineas del código.
-
-## Errores conocidos:
-- Todos los **menús interactivos** esperan números  como respuesta, si se ingresa texto en estos campos es esperable que ocurran errores.
-
-- No hay un seguro sobre cargar mas de una vez el archivo. Si se cargan **dos o mas veces** es esperable que hayan multiples problemas
+4. Fin del juego:
+```
+¡Felicidades! Has llegado a la sala final.
+Puntaje final: 47
+Ítems recolectados:
+1) Espada (Valor: 10, Peso: 3)
+2) Pergamino (Valor: 15, Peso: 2)
+```
